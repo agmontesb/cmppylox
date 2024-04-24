@@ -1,3 +1,3 @@
 
-def printValue(value):
-    print(f"'{value}'")
+def printValue(value, end='\n'):
+    print(f"'{value}'", end=end)

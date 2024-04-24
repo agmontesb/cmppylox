@@ -5,6 +5,11 @@ from parcel import Parcel
 # OpCode
 OP_RETURN = 0x01
 OP_CONSTANT = 0x02
+OP_ADD = 0x03
+OP_SUBTRACT = 0x04
+OP_MULTIPLY = 0x05
+OP_DIVIDE = 0x06
+OP_NEGATE = 0x07
 
 
 class Chunk:

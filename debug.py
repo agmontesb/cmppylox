@@ -26,6 +26,16 @@ def disassembleInstruction(chunk: Chunk, offset: int):
     instruction = chunk.code.readByte()
     
     match instruction:
+        case opCode.OP_ADD:
+            return simpleInstruction("OP_ADD", offset)
+        case opCode.OP_SUBTRACT:
+            return simpleInstruction("OP_SUBTRACT", offset)
+        case opCode.OP_MULTIPLY:
+            return simpleInstruction("OP_MULTIPLY", offset)
+        case opCode.OP_DIVIDE:
+            return simpleInstruction("OP_DIVIDE", offset)
+        case opCode.OP_NEGATE:
+            return simpleInstruction("OP_NEGATE", offset)
         case opCode.OP_CONSTANT:
             return constantInstruction("OP_CONSTANT", chunk, offset)
         case opCode.OP_RETURN:
