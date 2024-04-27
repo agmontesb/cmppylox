@@ -5,6 +5,7 @@ import operator
 
 from chunk import Chunk
 from common import DEBUG_TRACE_EXECUTION
+from compiler import lox_compile
 from debug import disassembleInstruction
 from value import printValue
 
@@ -56,10 +57,9 @@ def pop():
     return vm.stack.pop()
 
 
-def interpret(chunk: Chunk) -> InterpretResult:
-    vm.chunk = chunk
-    vm.ip = 0
-    return run()
+def interpret(source: str) -> InterpretResult:
+    lox_compile(source)
+    return InterpretResult.INTERPRET_OK
 
 
 def run() -> InterpretResult:
