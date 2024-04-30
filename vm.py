@@ -3,7 +3,7 @@ import sys
 from enum import Enum
 import operator
 
-from chunk import Chunk
+from chunk import Chunk, init_chunk, free_chunk
 from common import DEBUG_TRACE_EXECUTION
 from compiler import lox_compile
 from debug import disassembleInstruction
@@ -58,8 +58,19 @@ def pop():
 
 
 def interpret(source: str) -> InterpretResult:
-    lox_compile(source)
-    return InterpretResult.INTERPRET_OK
+    chunk = Chunk()
+    init_chunk(chunk)
+
+    if not lox_compile(source, chunk):
+        free_chunk(chunk)
+        return InterpretResult.INTERPRET_COMPILE_ERROR
+
+    vm.chunk = chunk
+    vm.ip = 0
+    result: InterpretResult = run()
+
+    free_chunk(chunk)
+    return result
 
 
 def run() -> InterpretResult:

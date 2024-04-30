@@ -32,7 +32,7 @@ def free_chunk(chunk):
     init_chunk(chunk)
 
 
-def write_code(chunk: Chunk, byte: bytes, line: int):
+def write_code(chunk: Chunk, byte: int, line: int):
     npos = chunk.code.dataPosition()
     chunk.code.writeByte(byte)
     if npos == len(chunk.lines):
