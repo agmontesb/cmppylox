@@ -1,14 +1,23 @@
+from _ctypes import sizeof
+from ctypes import c_int
 
 from parcel import Parcel
-
+from value import Value
 
 # OpCode
 OP_RETURN = 0x01
 OP_CONSTANT = 0x02
+OP_NIL = 0x08
+OP_TRUE = 0x09
+OP_FALSE = 0x0A
+OP_EQUAL = 0x0C
+OP_GREATER = 0x0D
+OP_LESS = 0x0E
 OP_ADD = 0x03
 OP_SUBTRACT = 0x04
 OP_MULTIPLY = 0x05
 OP_DIVIDE = 0x06
+OP_NOT = 0x0B
 OP_NEGATE = 0x07
 
 
@@ -42,6 +51,7 @@ def write_code(chunk: Chunk, byte: int, line: int):
 
 
 def addConstant(chunk, value):
-    pos = chunk.constants.dataPosition()
-    chunk.constants.writeDouble(1.0 * value)
+    value_size = sizeof(c_int) + sizeof(Value)
+    pos = chunk.constants.dataPosition() // value_size
+    chunk.constants.writeTypedObject(value, 1)
     return pos

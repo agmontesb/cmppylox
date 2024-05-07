@@ -1,7 +1,9 @@
 import sys
+from _ctypes import sizeof
+from ctypes import c_int
 
 from chunk import Chunk
-from value import printValue
+from value import printValue, Value
 
 opCode = sys.modules['chunk']
 
@@ -34,10 +36,24 @@ def disassembleInstruction(chunk: Chunk, offset: int):
             return simpleInstruction("OP_MULTIPLY", offset)
         case opCode.OP_DIVIDE:
             return simpleInstruction("OP_DIVIDE", offset)
+        case opCode.OP_NOT:
+            return simpleInstruction("OP_NOT", offset)
         case opCode.OP_NEGATE:
             return simpleInstruction("OP_NEGATE", offset)
         case opCode.OP_CONSTANT:
             return constantInstruction("OP_CONSTANT", chunk, offset)
+        case opCode.OP_NIL:
+            return simpleInstruction("OP_NIL", offset)
+        case opCode.OP_TRUE:
+            return simpleInstruction("OP_TRUE", offset)
+        case opCode.OP_FALSE:
+            return simpleInstruction("OP_FALSE", offset)
+        case opCode.OP_EQUAL:
+            return simpleInstruction("OP_EQUAL", offset)
+        case opCode.OP_GREATER:
+            return simpleInstruction("OP_GREATER", offset)
+        case opCode.OP_LESS:
+            return simpleInstruction("OP_LESS", offset)
         case opCode.OP_RETURN:
             return simpleInstruction("OP_RETURN", offset)
         case _:
@@ -46,11 +62,13 @@ def disassembleInstruction(chunk: Chunk, offset: int):
 
 
 def constantInstruction(name: str, chunk: Chunk, offset: int):
-    constant_offset = chunk.code.readByte()
+    value_size = sizeof(c_int) + sizeof(Value)
+    constant = chunk.code.readByte()
+    constant_offset = constant * value_size
     chunk.constants.setDataPosition(constant_offset)
-    constant = constant_offset // 8
     print(f"{name} {constant} ", end="")
-    printValue(chunk.constants.readDouble())
+    value = chunk.constants.readTypedObject(Value())
+    printValue(value)
     return offset + 2
 
 def simpleInstruction(name: str, offset: int):
