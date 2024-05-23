@@ -62,12 +62,9 @@ def disassembleInstruction(chunk: Chunk, offset: int):
 
 
 def constantInstruction(name: str, chunk: Chunk, offset: int):
-    value_size = sizeof(c_int) + sizeof(Value)
-    constant = chunk.code.readByte()
-    constant_offset = constant * value_size
-    chunk.constants.setDataPosition(constant_offset)
-    print(f"{name} {constant} ", end="")
-    value = chunk.constants.readTypedObject(Value())
+    constant_pos = chunk.code.readByte()
+    print(f"{name} {constant_pos} ", end="")
+    value = chunk.constants[constant_pos]
     printValue(value)
     return offset + 2
 

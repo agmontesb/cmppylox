@@ -31,7 +31,7 @@ class Chunk:
 
 def init_chunk(chunk):
     chunk.code = Parcel()
-    chunk.constants = Parcel()
+    chunk.constants = []
     chunk.lines = []
 
 
@@ -51,7 +51,6 @@ def write_code(chunk: Chunk, byte: int, line: int):
 
 
 def addConstant(chunk, value):
-    value_size = sizeof(c_int) + sizeof(Value)
-    pos = chunk.constants.dataPosition() // value_size
-    chunk.constants.writeTypedObject(value, 1)
+    pos = len(chunk.constants)
+    chunk.constants.append(value)
     return pos

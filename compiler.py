@@ -1,3 +1,5 @@
+from _ctypes import POINTER, pointer
+from ctypes import cast
 from enum import Enum
 from typing import Callable
 
@@ -5,8 +7,9 @@ from chunk import Chunk, OP_RETURN, OP_CONSTANT, addConstant, OP_NEGATE, OP_ADD,
     write_code, OP_FALSE, OP_NIL, OP_TRUE, OP_NOT, OP_EQUAL, OP_GREATER, OP_LESS
 from common import DEBUG_PRINT_CODE
 from debug import disassembleChunk
+from loxobject import copyString, LoxObj
 from scanner import initScanner, scanToken, TokenType
-from value import NUMBER_VAL, Value
+from value import NUMBER_VAL, Value, OBJ_VAL
 
 
 class Parser:
@@ -176,6 +179,12 @@ def number():
     emitConstant(NUMBER_VAL(value))
 
 
+def string():
+    objstring = copyString(parser.previous.lexeme[1:-1])
+    lobj = cast(pointer(objstring), POINTER(LoxObj)).contents
+    return emitConstant(OBJ_VAL(lobj))
+
+
 def unary():
     operatorType = parser.previous.token_type
     parsePrecedence(Precedence.PREC_UNARY)
@@ -203,6 +212,7 @@ rules[TokenType.TOKEN_SEMICOLON.value] = ParseRule(None, None, Precedence.PREC_N
 rules[TokenType.TOKEN_SLASH.value] = ParseRule(None, binary, Precedence.PREC_FACTOR)
 rules[TokenType.TOKEN_STAR.value] = ParseRule(None, binary, Precedence.PREC_FACTOR)
 rules[TokenType.TOKEN_NUMBER.value] = ParseRule(number, None, Precedence.PREC_NONE)
+rules[TokenType.TOKEN_STRING.value] = ParseRule(string, None, Precedence.PREC_NONE)
 rules[TokenType.TOKEN_BANG.value] = ParseRule(unary, None, Precedence.PREC_NONE)
 rules[TokenType.TOKEN_BANG_EQUAL.value] = ParseRule(None, binary, Precedence.PREC_EQUALITY)
 rules[TokenType.TOKEN_EQUAL_EQUAL.value] = ParseRule(None, binary, Precedence.PREC_EQUALITY)

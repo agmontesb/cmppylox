@@ -1,20 +1,26 @@
-from _ctypes import Structure, Union, sizeof
+from _ctypes import Structure, Union, sizeof, pointer, POINTER
 from ctypes import c_double, c_bool, c_int
 from enum import Enum
 
+from loxobject import LoxObj, printObject
 
-class ValueType(Structure):
+
+class ValueType(c_int):
     VAL_BOOL = 0x0001
     VAL_NIL = 0x0001
     VAL_NUMBER = 0x0002
-    # VAL_OBJ = 3
+    VAL_OBJ = 0x0003
 
 
 class Value(Structure):
     _fields_ = [
         ("_type", c_int),
         ('padding', c_int),
-        ("_as", type('_As', (Union,), {'_fields_': [('boolean', c_bool), ('number', c_double),]})),
+        ("_as", type('_As', (Union,), {'_fields_': [
+            ('boolean', c_bool),
+            ('number', c_double),
+            ('loxobj', POINTER(LoxObj)),
+        ]})),
     ]
 
     def writeToParcel(self, dest, flags):
@@ -26,7 +32,14 @@ class Value(Structure):
         """
         dest.writeInt(self._type)
         dest.writeInt(self.padding)
-        dest.writeDouble(self._as.number)
+        if self._type == ValueType.VAL_BOOL:
+            dest.writeByte(self._as.boolean)
+        elif self._type == ValueType.VAL_NUMBER:
+            dest.writeDouble(self._as.number)
+        elif self._type == ValueType.VAL_OBJ:
+            dest.writeTypedObject(self._as.loxobj.contents, flags)
+        else:
+            dest.writeDouble(self._as.number)
 
     def createFromParcel(self, source):
         """
@@ -50,6 +63,14 @@ def IS_NIL(value: Value) -> bool:
 
 def IS_NUMBER(value: Value) -> bool:
     return value._type == ValueType.VAL_NUMBER
+
+
+def IS_OBJ(value: Value) -> bool:
+    return value._type == ValueType.VAL_OBJ
+
+
+def AS_OBJ(value: Value) -> LoxObj:
+    return value._as.loxobj.contents
 
 
 def AS_BOOL(value: Value) -> bool:
@@ -81,13 +102,23 @@ def NUMBER_VAL(value: float) -> Value:
     return val
 
 
+def OBJ_VAL(obj: LoxObj) -> Value:
+    val = Value()
+    val._type = ValueType.VAL_OBJ
+    val._as.loxobj = pointer(obj)
+    return val
+
+
 def printValue(value: Value, end='\n'):
-    if IS_BOOL(value):
-        print('true' if AS_BOOL(value) else 'false', end=end)
-    elif IS_NIL(value):
-        print('nil', end=end)
-    elif IS_NUMBER(value):
-        print(f"'{AS_NUMBER(value)}'", end=end)
+    match value._type:
+        case ValueType.VAL_BOOL:
+            print('true' if AS_BOOL(value) else 'false', end=end)
+        case ValueType.VAL_NIL:
+            print('nil', end=end)
+        case ValueType.VAL_NUMBER:
+            print(f"'{AS_NUMBER(value)}'", end=end)
+        case ValueType.VAL_OBJ:
+            printObject(value, end=end)
 
 
 def valuesEqual(a: Value, b: Value) -> bool:
@@ -99,6 +130,10 @@ def valuesEqual(a: Value, b: Value) -> bool:
         return True
     if IS_NUMBER(a):
         return AS_NUMBER(a) == AS_NUMBER(b)
+    if IS_OBJ(a):
+        aString = AS_OBJ(a)
+        bString = AS_OBJ(b)
+        return aString.length == bString.length and aString.chars == bString.chars
     return False
 
 

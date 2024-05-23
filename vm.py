@@ -1,7 +1,7 @@
 import collections
 import sys
-from _ctypes import sizeof
-from ctypes import c_int
+from _ctypes import sizeof, pointer, POINTER
+from ctypes import c_int, cast
 from enum import Enum
 import operator
 
@@ -9,8 +9,9 @@ from chunk import Chunk, init_chunk, free_chunk
 from common import DEBUG_TRACE_EXECUTION
 from compiler import lox_compile
 from debug import disassembleInstruction
+from loxobject import IS_STRING, AS_STRING, copyString, ObjType, ObjString, LoxObj
 from value import printValue, Value, IS_NUMBER, NUMBER_VAL, AS_NUMBER, NIL_VAL, BOOL_VAL, IS_NIL, IS_BOOL, AS_BOOL, \
-    valuesEqual
+    valuesEqual, ValueType, OBJ_VAL
 
 opCode = sys.modules['chunk']
 STACK_MAX = 256
@@ -22,6 +23,7 @@ class VM:
         self.chunk = None
         self.stack = collections.deque([], maxlen=STACK_MAX)
         self._ip = 0
+        self.objects = cast(None, POINTER(LoxObj))
 
     @property
     def ip(self):
@@ -45,11 +47,28 @@ class InterpretResult(Enum):
 
 def initVm():
     vm.stack.clear()
+    vm.objects = cast(None, POINTER(LoxObj))
     pass
 
 
 def freeVM():
-    pass
+    freeObjects()
+
+
+def freeObjects():
+    lobj = vm.objects.contents
+    while lobj:
+        next = lobj.next.contents
+        freeObj(lobj)
+        lobj = next
+
+
+def freeObj(lobj):
+    match lobj._type:
+        case ObjType.OBJ_STRING:
+            string = cast(pointer(lobj), POINTER(ObjString)).contents
+            del string
+
 
 
 def resetStack():
@@ -79,6 +98,15 @@ def isFalsey(value):
     return IS_NIL(value) or (IS_BOOL(value) and not AS_BOOL(value))
 
 
+def concatenate():
+    b = AS_STRING(pop())
+    a = AS_STRING(pop())
+    chars = a.chars + b.chars
+    string = copyString(chars.decode('utf-8'))
+    lobj = cast(pointer(string), POINTER(LoxObj)).contents
+    push(OBJ_VAL(lobj))
+
+
 def interpret(source: str) -> InterpretResult:
     chunk = Chunk()
     init_chunk(chunk)
@@ -102,11 +130,9 @@ def run() -> InterpretResult:
         return vm.chunk.code.readByte()
 
     def read_constant():
-        value_size = sizeof(c_int) + sizeof(Value)
-        constant_offset = value_size * vm.chunk.code.readByte()
+        constant_pos = vm.chunk.code.readByte()
         vm.ip = vm.chunk.code.dataPosition()
-        vm.chunk.constants.setDataPosition(constant_offset)
-        return vm.chunk.constants.readTypedObject(Value())
+        return vm.chunk.constants[constant_pos]
 
     def binary_op(value_type, op):
         if not IS_NUMBER(peek(0)) or not IS_NUMBER(peek(1)):
@@ -147,7 +173,15 @@ def run() -> InterpretResult:
             case opCode.OP_LESS:
                 binary_op(BOOL_VAL, operator.lt)
             case opCode.OP_ADD:
-                binary_op(NUMBER_VAL, operator.add)
+                if IS_STRING(peek(0)) and IS_STRING(peek(1)):
+                    concatenate()
+                elif IS_NUMBER(peek(0)) and IS_NUMBER(peek(1)):
+                    b = AS_NUMBER(pop())
+                    a = AS_NUMBER(pop())
+                    push(NUMBER_VAL(a + b))
+                else:
+                    runtimeError("Operands must be two numbers or two strings.")
+                    return InterpretResult.INTERPRET_RUNTIME_ERROR
             case opCode.OP_SUBTRACT:
                 binary_op(NUMBER_VAL, operator.sub)
             case opCode.OP_MULTIPLY:
