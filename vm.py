@@ -10,6 +10,7 @@ from common import DEBUG_TRACE_EXECUTION
 from compiler import lox_compile
 from debug import disassembleInstruction
 from loxobject import IS_STRING, AS_STRING, copyString, ObjType, ObjString, LoxObj
+from table import Table, initTable, freeTable
 from value import printValue, Value, IS_NUMBER, NUMBER_VAL, AS_NUMBER, NIL_VAL, BOOL_VAL, IS_NIL, IS_BOOL, AS_BOOL, \
     valuesEqual, ValueType, OBJ_VAL
 
@@ -24,6 +25,8 @@ class VM:
         self.stack = collections.deque([], maxlen=STACK_MAX)
         self._ip = 0
         self.objects = cast(None, POINTER(LoxObj))
+        self.strings = Table()
+
 
     @property
     def ip(self):
@@ -48,10 +51,12 @@ class InterpretResult(Enum):
 def initVm():
     vm.stack.clear()
     vm.objects = cast(None, POINTER(LoxObj))
+    initTable(vm.strings)
     pass
 
 
 def freeVM():
+    freeTable(vm.strings)
     freeObjects()
 
 

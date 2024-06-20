@@ -131,9 +131,7 @@ def valuesEqual(a: Value, b: Value) -> bool:
     if IS_NUMBER(a):
         return AS_NUMBER(a) == AS_NUMBER(b)
     if IS_OBJ(a):
-        aString = AS_OBJ(a)
-        bString = AS_OBJ(b)
-        return aString.length == bString.length and aString.chars == bString.chars
+        return AS_OBJ(a) == AS_OBJ(b)
     return False
 
 

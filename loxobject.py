@@ -1,5 +1,5 @@
 from _ctypes import Structure, sizeof, POINTER, pointer
-from ctypes import c_int, c_char_p, cast
+from ctypes import c_int, c_char_p, cast, c_uint32
 
 
 class ObjType(c_int):
@@ -28,30 +28,69 @@ class ObjString(Structure):
         ("obj", LoxObj),
         ("length", c_int),
         ("chars", c_char_p),
+        ("hash", c_uint32),
     ]
 
 
 def allocateObject(size: int, _type: int) -> bytes:
-    from vm import vm
-
     cobj = bytearray(b'\0' * size)
     lobj = LoxObj.from_buffer(cobj)
     lobj._type = _type
-    lobj.next = vm.objects
-    vm.objects = pointer(lobj)
+
+    try:
+        from vm import vm
+    except ImportError:
+        lobj.next = cast(None, POINTER(LoxObj))
+    else:
+        lobj.next = vm.objects
+        vm.objects = pointer(lobj)
     return cobj
 
 
-def allocateString(chars: str, length: int) -> ObjString:
+def allocateString(chars: str, length: int, hash: int) -> ObjString:
+    from vm import vm
+    from table import tableSet
+    from value import NIL_VAL
+
     lobj = allocateObject(sizeof(ObjString), ObjType.OBJ_STRING)
     string = ObjString.from_buffer_copy(lobj)
     string.length = length
     string.chars = c_char_p(chars.encode('utf-8') + b'\0')
+    string.hash = hash
+    tableSet(vm.strings, string, NIL_VAL())
     return string
 
 
+def takeString(chars: str, length: int) -> ObjString:
+    from table import tableFindString
+    from vm import vm
+
+    hash = hashString(chars, length)
+    interned = tableFindString(vm.strings, chars, length, hash)
+    if interned is not None:
+        return interned
+    return allocateString(chars, length, hash)
+
+
+def hashString(chars: str, length: int) -> int:
+    key = chars.encode('utf-8')
+    hash = c_uint32(2166136261)
+    for i in range(length):
+        hash.value ^= key[i]
+        hash.value *= 16777619
+    return hash.value
+
+
 def copyString(chars: str) -> ObjString:
-    return allocateString(chars, len(chars))
+    from vm import vm
+    from table import tableFindString
+
+    length = len(chars)
+    hash = hashString(chars, length)
+    interned = tableFindString(vm.strings, chars, length, hash)
+    if interned:
+        return interned
+    return allocateString(chars, length, hash)
 
 
 def printObject(value: 'Value', end='\n'):

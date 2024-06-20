@@ -1,8 +1,4 @@
-from _ctypes import sizeof
-from ctypes import c_int
-
 from parcel import Parcel
-from value import Value
 
 # OpCode
 OP_RETURN = 0x01
