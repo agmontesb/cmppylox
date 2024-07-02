@@ -1,20 +1,27 @@
+from enum import Enum
+
 from parcel import Parcel
 
-# OpCode
-OP_RETURN = 0x01
-OP_CONSTANT = 0x02
-OP_NIL = 0x08
-OP_TRUE = 0x09
-OP_FALSE = 0x0A
-OP_EQUAL = 0x0C
-OP_GREATER = 0x0D
-OP_LESS = 0x0E
-OP_ADD = 0x03
-OP_SUBTRACT = 0x04
-OP_MULTIPLY = 0x05
-OP_DIVIDE = 0x06
-OP_NOT = 0x0B
-OP_NEGATE = 0x07
+class opCode(Enum):
+    OP_RETURN = 0x01
+    OP_CONSTANT = 0x02
+    OP_NIL = 0x08
+    OP_TRUE = 0x09
+    OP_FALSE = 0x0A
+    OP_EQUAL = 0x0C
+    OP_GREATER = 0x0D
+    OP_LESS = 0x0E
+    OP_ADD = 0x03
+    OP_SUBTRACT = 0x04
+    OP_MULTIPLY = 0x05
+    OP_DIVIDE = 0x06
+    OP_NOT = 0x0B
+    OP_NEGATE = 0x07
+    OP_PRINT = 0x0F
+    OP_POP = 0x10
+    OP_DEFINE_GLOBAL = 0x11
+    OP_GET_GLOBAL = 0x12
+    OP_SET_GLOBAL = 0x13
 
 
 class Chunk:

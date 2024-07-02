@@ -1,11 +1,7 @@
 import sys
-from _ctypes import sizeof
-from ctypes import c_int
 
-from chunk import Chunk
-from value import printValue, Value
-
-opCode = sys.modules['chunk']
+from chunk import Chunk, opCode
+from value import printValue
 
 
 def disassembleChunk(chunk: Chunk, name: str):
@@ -25,9 +21,13 @@ def disassembleInstruction(chunk: Chunk, offset: int):
     else:
         print(f"{chunk.lines[offset]:04d} ", end="")
 
-    instruction = chunk.code.readByte()
+    instrution = chunk.code.readByte()
+    try:
+        opcode = opCode(instrution)
+    except:
+        opcode = None
     
-    match instruction:
+    match opcode:
         case opCode.OP_ADD:
             return simpleInstruction("OP_ADD", offset)
         case opCode.OP_SUBTRACT:
@@ -48,12 +48,22 @@ def disassembleInstruction(chunk: Chunk, offset: int):
             return simpleInstruction("OP_TRUE", offset)
         case opCode.OP_FALSE:
             return simpleInstruction("OP_FALSE", offset)
+        case opCode.OP_POP:
+            return simpleInstruction("OP_POP", offset)
+        case opCode.OP_GET_GLOBAL:
+            return constantInstruction("OP_GET_GLOBAL", chunk, offset)
+        case opCode.OP_DEFINE_GLOBAL:
+            return constantInstruction("OP_DEFINE_GLOBAL", chunk, offset)
+        case opCode.OP_SET_GLOBAL:
+            return constantInstruction("OP_SET_GLOBAL", chunk, offset)
         case opCode.OP_EQUAL:
             return simpleInstruction("OP_EQUAL", offset)
         case opCode.OP_GREATER:
             return simpleInstruction("OP_GREATER", offset)
         case opCode.OP_LESS:
             return simpleInstruction("OP_LESS", offset)
+        case opCode.OP_PRINT:
+            return simpleInstruction("OP_PRINT", offset)
         case opCode.OP_RETURN:
             return simpleInstruction("OP_RETURN", offset)
         case _:

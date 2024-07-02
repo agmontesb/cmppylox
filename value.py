@@ -1,6 +1,5 @@
 from _ctypes import Structure, Union, sizeof, pointer, POINTER
 from ctypes import c_double, c_bool, c_int
-from enum import Enum
 
 from loxobject import LoxObj, printObject
 

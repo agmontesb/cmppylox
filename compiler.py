@@ -1,14 +1,15 @@
+import sys
 from _ctypes import POINTER, pointer
 from ctypes import cast
 from enum import Enum
+from functools import total_ordering
 from typing import Callable
 
-from chunk import Chunk, OP_RETURN, OP_CONSTANT, addConstant, OP_NEGATE, OP_ADD, OP_SUBTRACT, OP_MULTIPLY, OP_DIVIDE, \
-    write_code, OP_FALSE, OP_NIL, OP_TRUE, OP_NOT, OP_EQUAL, OP_GREATER, OP_LESS
+from chunk import Chunk, addConstant, write_code, opCode
 from common import DEBUG_PRINT_CODE
 from debug import disassembleChunk
 from loxobject import copyString, LoxObj
-from scanner import initScanner, scanToken, TokenType
+from scanner import initScanner, scanToken, TokenType, Token
 from value import NUMBER_VAL, Value, OBJ_VAL
 
 
@@ -20,7 +21,7 @@ class Parser:
         self.hadError = False
         self.panicMode = False
 
-
+@total_ordering
 class Precedence(Enum):
     PREC_NONE = 0
     PREC_ASSIGNMENT = 1     # =
@@ -34,8 +35,14 @@ class Precedence(Enum):
     PREC_CALL = 9           # . ()
     PREC_PRIMARY = 10
 
+    def __lt__(self, other):
+        return self.value < other.value
 
-parseFn = Callable[[], None]
+    def __eq__(self, other):
+        return self.value == other.value
+
+
+parseFn = Callable[[bool], None]
 
 
 class ParseRule:
@@ -90,17 +97,32 @@ def consume(token_type: TokenType, message: str):
     errorAtCurrent(message)
 
 
-def emitByte(byte: int):
-    write_code(currentChunk(), byte, parser.previous.line)
+def check(token_type: TokenType):
+    return parser.current.token_type == token_type
 
 
-def emitBytes(byte1: int, byte2: int):
+def match(token_type: TokenType):
+    if not check(token_type):
+        return False
+    advance()
+    return True
+
+
+def emitByte(byte: int | opCode):
+    try:
+        int_byte = byte.value
+    except AttributeError:
+        int_byte = byte
+    write_code(currentChunk(), int_byte, parser.previous.line)
+
+
+def emitBytes(byte1: int | opCode, byte2: int | opCode):
     emitByte(byte1)
     emitByte(byte2)
 
 
 def emitReturn():
-    emitByte(OP_RETURN)
+    emitByte(opCode.OP_RETURN)
 
 
 def makeConstant(value: Value):
@@ -112,7 +134,7 @@ def makeConstant(value: Value):
 
 
 def emitConstant(value: Value):
-    emitBytes(OP_CONSTANT, makeConstant(value))
+    emitBytes(opCode.OP_CONSTANT, makeConstant(value))
 
 
 def endCompiler():
@@ -123,7 +145,7 @@ def endCompiler():
             disassembleChunk(currentChunk(), "code")
 
 
-def binary():
+def binary(canAssign: bool):
     # Remember the operator.
     operatorType = parser.previous.token_type
 
@@ -134,110 +156,125 @@ def binary():
     # Emit the operator instruction.
     match operatorType:
         case TokenType.TOKEN_BANG_EQUAL:
-            emitBytes(OP_EQUAL, OP_NOT)
+            emitBytes(opCode.OP_EQUAL, opCode.OP_NOT)
         case TokenType.TOKEN_EQUAL_EQUAL:
-            emitByte(OP_EQUAL)
+            emitByte(opCode.OP_EQUAL)
         case TokenType.TOKEN_GREATER:
-            emitByte(OP_GREATER)
+            emitByte(opCode.OP_GREATER)
         case TokenType.TOKEN_GREATER_EQUAL:
-            emitBytes(OP_LESS, OP_NOT)
+            emitBytes(opCode.OP_LESS, opCode.OP_NOT)
         case TokenType.TOKEN_LESS:
-            emitByte(OP_LESS)
+            emitByte(opCode.OP_LESS)
         case TokenType.TOKEN_LESS_EQUAL:
-            emitBytes(OP_GREATER, OP_NOT)
+            emitBytes(opCode.OP_GREATER, opCode.OP_NOT)
         case TokenType.TOKEN_PLUS:
-            emitByte(OP_ADD)
+            emitByte(opCode.OP_ADD)
         case TokenType.TOKEN_MINUS:
-            emitByte(OP_SUBTRACT)
+            emitByte(opCode.OP_SUBTRACT)
         case TokenType.TOKEN_STAR:
-            emitByte(OP_MULTIPLY)
+            emitByte(opCode.OP_MULTIPLY)
         case TokenType.TOKEN_SLASH:
-            emitByte(OP_DIVIDE)
+            emitByte(opCode.OP_DIVIDE)
         case _: # Unreachable.
             pass
 
 
-def literal():
+def literal(canAssign: bool):
     match parser.previous.token_type:
         case TokenType.TOKEN_FALSE:
-            emitByte(OP_FALSE)
+            emitByte(opCode.OP_FALSE)
         case TokenType.TOKEN_NIL:
-            emitByte(OP_NIL)
+            emitByte(opCode.OP_NIL)
         case TokenType.TOKEN_TRUE:
-            emitByte(OP_TRUE)
+            emitByte(opCode.OP_TRUE)
         case _:
             return
 
 
-def grouping():
+def grouping(canAssign: bool):
     expression()
     consume(TokenType.TOKEN_RIGHT_PAREN, "Expect ')' after expression.")
 
 
-def number():
+def number(canAssign: bool):
     value = float(parser.previous.lexeme)
     emitConstant(NUMBER_VAL(value))
 
 
-def string():
+def string(canAssign: bool):
     objstring = copyString(parser.previous.lexeme[1:-1])
     lobj = cast(pointer(objstring), POINTER(LoxObj)).contents
     return emitConstant(OBJ_VAL(lobj))
 
 
-def unary():
+def namedVariable(name: Token, canAssign: bool):
+    arg = identifierConstant(name)
+    if canAssign and match(TokenType.TOKEN_EQUAL):
+        expression()
+        emitBytes(opCode.OP_SET_GLOBAL, arg)
+    else:
+        emitBytes(opCode.OP_GET_GLOBAL, arg)
+
+
+def variable(canAssign: bool):
+    namedVariable(parser.previous, canAssign)
+
+
+def unary(canAssign: bool):
     operatorType = parser.previous.token_type
     parsePrecedence(Precedence.PREC_UNARY)
     match operatorType:
         case TokenType.TOKEN_BANG:
-            emitByte(OP_NOT)
+            emitByte(opCode.OP_NOT)
         case TokenType.TOKEN_MINUS:
-            emitByte(OP_NEGATE)
+            emitByte(opCode.OP_NEGATE)
             return
         case _:
             return
 
 
-max_value = max(x.value for x in TokenType) + 1
-rules: list[ParseRule] = max_value * [None]
-rules[TokenType.TOKEN_LEFT_PAREN.value] = ParseRule(grouping, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_RIGHT_PAREN.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_LEFT_BRACE.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_RIGHT_BRACE.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_COMMA.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_DOT.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_MINUS.value] = ParseRule(unary, binary, Precedence.PREC_TERM)
-rules[TokenType.TOKEN_PLUS.value] = ParseRule(None, binary, Precedence.PREC_TERM)
-rules[TokenType.TOKEN_SEMICOLON.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_SLASH.value] = ParseRule(None, binary, Precedence.PREC_FACTOR)
-rules[TokenType.TOKEN_STAR.value] = ParseRule(None, binary, Precedence.PREC_FACTOR)
-rules[TokenType.TOKEN_NUMBER.value] = ParseRule(number, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_STRING.value] = ParseRule(string, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_BANG.value] = ParseRule(unary, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_BANG_EQUAL.value] = ParseRule(None, binary, Precedence.PREC_EQUALITY)
-rules[TokenType.TOKEN_EQUAL_EQUAL.value] = ParseRule(None, binary, Precedence.PREC_EQUALITY)
-rules[TokenType.TOKEN_GREATER.value] = ParseRule(None, binary, Precedence.PREC_COMPARISON)
-rules[TokenType.TOKEN_GREATER_EQUAL.value] = ParseRule(None, binary, Precedence.PREC_COMPARISON)
-rules[TokenType.TOKEN_LESS.value] = ParseRule(None, binary, Precedence.PREC_COMPARISON)
-rules[TokenType.TOKEN_LESS_EQUAL.value] = ParseRule(None, binary, Precedence.PREC_COMPARISON)
-rules[TokenType.TOKEN_AND.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_CLASS.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_ELSE.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_FALSE.value] = ParseRule(literal, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_FOR.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_FUN.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_IF.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_NIL.value] = ParseRule(literal, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_OR.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_PRINT.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_RETURN.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_SUPER.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_THIS.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_TRUE.value] = ParseRule(literal, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_VAR.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_WHILE.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_ERROR.value] = ParseRule(None, None, Precedence.PREC_NONE)
-rules[TokenType.TOKEN_EOF.value] = ParseRule(None, None, Precedence.PREC_NONE)
+rules: dict[TokenType, ParseRule] = {
+    TokenType.TOKEN_LEFT_PAREN: ParseRule(grouping, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_RIGHT_PAREN: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_LEFT_BRACE: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_RIGHT_BRACE: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_COMMA: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_DOT: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_MINUS: ParseRule(unary, binary, Precedence.PREC_TERM),
+    TokenType.TOKEN_PLUS: ParseRule(None, binary, Precedence.PREC_TERM),
+    TokenType.TOKEN_SEMICOLON: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_SLASH: ParseRule(None, binary, Precedence.PREC_FACTOR),
+    TokenType.TOKEN_STAR: ParseRule(None, binary, Precedence.PREC_FACTOR),
+    TokenType.TOKEN_NUMBER: ParseRule(number, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_IDENTIFIER: ParseRule(variable, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_STRING: ParseRule(string, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_BANG: ParseRule(unary, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_BANG_EQUAL: ParseRule(None, binary, Precedence.PREC_EQUALITY),
+    TokenType.TOKEN_EQUAL: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_EQUAL_EQUAL: ParseRule(None, binary, Precedence.PREC_EQUALITY),
+    TokenType.TOKEN_GREATER: ParseRule(None, binary, Precedence.PREC_COMPARISON),
+    TokenType.TOKEN_GREATER_EQUAL: ParseRule(None, binary, Precedence.PREC_COMPARISON),
+    TokenType.TOKEN_LESS: ParseRule(None, binary, Precedence.PREC_COMPARISON),
+    TokenType.TOKEN_LESS_EQUAL: ParseRule(None, binary, Precedence.PREC_COMPARISON),
+    TokenType.TOKEN_AND: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_CLASS: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_ELSE: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_FALSE: ParseRule(literal, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_FOR: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_FUN: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_IF: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_NIL: ParseRule(literal, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_OR: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_PRINT: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_RETURN: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_SUPER: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_THIS: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_TRUE: ParseRule(literal, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_VAR: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_WHILE: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_ERROR: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_EOF: ParseRule(None, None, Precedence.PREC_NONE)
+}
 
 
 def parsePrecedence(precedence: Precedence):
@@ -246,20 +283,98 @@ def parsePrecedence(precedence: Precedence):
     if prefixrule is None:
         error("Expect expression.")
         return
-    prefixrule()
-    while precedence.value <= getRule(parser.current.token_type).precedence.value:
+    canAssign = precedence <= Precedence.PREC_ASSIGNMENT
+    prefixrule(canAssign)
+    while precedence <= getRule(parser.current.token_type).precedence:
         advance()
         infixrule = getRule(parser.previous.token_type).infix
-        infixrule()
+        infixrule(canAssign)
+    if canAssign and match(TokenType.TOKEN_EQUAL):
+        error("Invalid assignment target.")
+
+
+def identifierConstant(name: Token) -> int:
+    return makeConstant(
+        OBJ_VAL(
+            cast(pointer(
+                copyString(name.lexeme)), POINTER(LoxObj)
+            ).contents
+        )
+    )
+
+
+def parseVariable(error_message: str) -> int:
+    consume(TokenType.TOKEN_IDENTIFIER, error_message)
+    return identifierConstant(parser.previous)
 
 
 def getRule(tokenType: TokenType) -> ParseRule:
-    return rules[tokenType.value]
+    return rules[tokenType]
 
 
 def expression():
     parsePrecedence(Precedence.PREC_ASSIGNMENT)
     pass
+
+
+def defineVariable(lox_global: int):
+    emitBytes(opCode.OP_DEFINE_GLOBAL, lox_global)
+
+
+def varDeclaration():
+    lox_global = parseVariable("Expect variable name.")
+    if match(TokenType.TOKEN_EQUAL):
+        expression()
+    else:
+        emitByte(opCode.OP_NIL)
+    consume(TokenType.TOKEN_SEMICOLON, "Expect ';' after variable declaration.")
+    defineVariable(lox_global)
+
+
+def expressionStatement():
+    expression()
+    consume(TokenType.TOKEN_SEMICOLON, "Expect ';' after expression.")
+    emitByte(opCode.OP_POP)
+
+
+def printStatement():
+    expression()
+    consume(TokenType.TOKEN_SEMICOLON, "Expect ';' after value.")
+    emitByte(opCode.OP_PRINT)
+
+
+def synchronize():
+    parser.panicMode = False
+    while parser.current.token_type != TokenType.TOKEN_EOF:
+        if parser.previous.token_type == TokenType.TOKEN_SEMICOLON:
+            return
+
+        match parser.current.token_type:
+            case (TokenType.TOKEN_CLASS,
+                  TokenType.TOKEN_FUN,
+                  TokenType.TOKEN_VAR,
+                  TokenType.TOKEN_FOR,
+                  TokenType.TOKEN_IF,
+                  TokenType.TOKEN_WHILE,
+                  TokenType.TOKEN_PRINT,
+                  TokenType.TOKEN_RETURN):
+                return
+
+        advance()
+
+
+def declaration():
+    if match(TokenType.TOKEN_VAR):
+        varDeclaration()
+    else:
+        statement()
+
+
+def statement():
+    if match(TokenType.TOKEN_PRINT):
+        printStatement()
+    else:
+        expressionStatement()
 
 
 def lox_compile(source: str, chunk: Chunk) -> bool:
@@ -272,8 +387,12 @@ def lox_compile(source: str, chunk: Chunk) -> bool:
 
     initScanner(source)
     advance()
-    expression()
-    consume(TokenType.TOKEN_EOF, "Expect end of expression.")
+
+    while not match(TokenType.TOKEN_EOF):
+        declaration()
+        if parser.panicMode:
+            synchronize()
+
     endCompiler()
     return not parser.hadError
 

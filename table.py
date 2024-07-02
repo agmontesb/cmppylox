@@ -1,7 +1,7 @@
-from _ctypes import Structure, POINTER, pointer
-from ctypes import c_int, cast
+from _ctypes import Structure, POINTER, pointer, sizeof
+from ctypes import c_int, cast, memmove
 
-from loxobject import ObjString, copyString
+from loxobject import ObjString
 from value import Value, NIL_VAL, BOOL_VAL, IS_NIL
 
 TABLE_MAX_LOAD = 0.75
@@ -41,8 +41,9 @@ def tableGet(table: Table, key: ObjString, value: Value) -> bool:
     if entry.key is None:
         return False
 
-    value._type = entry.value._type
-    value._as = pointer(entry.value._as.contents)
+    memmove(pointer(value), pointer(entry.value), sizeof(Value))
+    # value._type = entry.value._type
+    # value._as.loxobj = entry.value._as.loxobj
     return True
 
 

@@ -5,16 +5,15 @@ from ctypes import c_int, cast
 from enum import Enum
 import operator
 
-from chunk import Chunk, init_chunk, free_chunk
+from chunk import Chunk, init_chunk, free_chunk, opCode
 from common import DEBUG_TRACE_EXECUTION
 from compiler import lox_compile
 from debug import disassembleInstruction
 from loxobject import IS_STRING, AS_STRING, copyString, ObjType, ObjString, LoxObj
-from table import Table, initTable, freeTable
+from table import Table, initTable, freeTable, tableSet, tableGet, tableDelete
 from value import printValue, Value, IS_NUMBER, NUMBER_VAL, AS_NUMBER, NIL_VAL, BOOL_VAL, IS_NIL, IS_BOOL, AS_BOOL, \
-    valuesEqual, ValueType, OBJ_VAL
+    valuesEqual, OBJ_VAL
 
-opCode = sys.modules['chunk']
 STACK_MAX = 256
 
 
@@ -26,6 +25,7 @@ class VM:
         self._ip = 0
         self.objects = cast(None, POINTER(LoxObj))
         self.strings = Table()
+        self.globals = Table()
 
 
     @property
@@ -51,11 +51,13 @@ class InterpretResult(Enum):
 def initVm():
     vm.stack.clear()
     vm.objects = cast(None, POINTER(LoxObj))
+    initTable(vm.globals)
     initTable(vm.strings)
     pass
 
 
 def freeVM():
+    freeTable(vm.globals)
     freeTable(vm.strings)
     freeObjects()
 
@@ -81,8 +83,8 @@ def resetStack():
 
 
 def runtimeError(format_str: str, *args):
-    print(format_str.format(*args))
-    print(f"[line {vm.chunk.lines[vm.ip]}] in script")
+    print(format_str.format(*args), end='')
+    print(f" [line {vm.chunk.lines[vm.ip]}] in script")
     resetStack()
     return InterpretResult.INTERPRET_RUNTIME_ERROR
 
@@ -129,10 +131,18 @@ def interpret(source: str) -> InterpretResult:
 
 
 def run() -> InterpretResult:
+
+    def READ_STRING():
+        return AS_STRING(read_constant())
+
     def read_byte():
         vm.chunk.code.setDataPosition(vm.ip)
         vm.ip += 1
-        return vm.chunk.code.readByte()
+        instruction = vm.chunk.code.readByte()
+        try:
+            return opCode(instruction)
+        except:
+            return None
 
     def read_constant():
         constant_pos = vm.chunk.code.readByte()
@@ -169,6 +179,25 @@ def run() -> InterpretResult:
                 push(BOOL_VAL(True))
             case opCode.OP_FALSE:
                 push(BOOL_VAL(False))
+            case opCode.OP_POP:
+                pop()
+            case opCode.OP_GET_GLOBAL:
+                name = READ_STRING()
+                value = Value()
+                if not tableGet(vm.globals, name, value):
+                    runtimeError("Undefined variable '{}'.", name.chars)
+                    return InterpretResult.INTERPRET_RUNTIME_ERROR
+                push(value)
+            case opCode.OP_DEFINE_GLOBAL:
+                name = READ_STRING()
+                tableSet(vm.globals, name, peek(0))
+                pop()
+            case opCode.OP_SET_GLOBAL:
+                name = READ_STRING()
+                if tableSet(vm.globals, name, peek(0)):
+                    tableDelete(vm.globals, name)
+                    runtimeError("Undefined variable '{}'.", name.chars.decode('utf-8'))
+                    return InterpretResult.INTERPRET_RUNTIME_ERROR
             case opCode.OP_EQUAL:
                 b = pop()
                 a = pop()
@@ -200,8 +229,9 @@ def run() -> InterpretResult:
                     runtimeError("Operand must be a number.")
                     return InterpretResult.INTERPRET_RUNTIME_ERROR
                 push(NUMBER_VAL(-AS_NUMBER(pop())))
-            case opCode.OP_RETURN:
+            case opCode.OP_PRINT:
                 printValue(pop())
+            case opCode.OP_RETURN:
                 return InterpretResult.INTERPRET_OK
             case _:
                 print("Unknown opcode")
