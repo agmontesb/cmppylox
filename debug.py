@@ -50,10 +50,14 @@ def disassembleInstruction(chunk: Chunk, offset: int):
             return simpleInstruction("OP_FALSE", offset)
         case opCode.OP_POP:
             return simpleInstruction("OP_POP", offset)
+        case opCode.OP_GET_LOCAL:
+            return byteInstruction("OP_GET_LOCAL", chunk, offset)
         case opCode.OP_GET_GLOBAL:
             return constantInstruction("OP_GET_GLOBAL", chunk, offset)
         case opCode.OP_DEFINE_GLOBAL:
             return constantInstruction("OP_DEFINE_GLOBAL", chunk, offset)
+        case opCode.OP_SET_LOCAL:
+            return byteInstruction("OP_SET_LOCAL", chunk, offset)
         case opCode.OP_SET_GLOBAL:
             return constantInstruction("OP_SET_GLOBAL", chunk, offset)
         case opCode.OP_EQUAL:
@@ -82,3 +86,9 @@ def simpleInstruction(name: str, offset: int):
     print(name)
     return offset + 1
     pass
+
+
+def byteInstruction(name: str, chunk: Chunk, offset: int):
+    slot = chunk.code[offset + 1]
+    print(f"{name} {slot}")
+    return offset + 2

@@ -1,12 +1,12 @@
 import sys
-from _ctypes import POINTER, pointer
+from _ctypes import POINTER, pointer, Structure
 from ctypes import cast
 from enum import Enum
 from functools import total_ordering
 from typing import Callable
 
 from chunk import Chunk, addConstant, write_code, opCode
-from common import DEBUG_PRINT_CODE
+from common import DEBUG_PRINT_CODE, UINT8_COUNT
 from debug import disassembleChunk
 from loxobject import copyString, LoxObj
 from scanner import initScanner, scanToken, TokenType, Token
@@ -52,7 +52,25 @@ class ParseRule:
         self.precedence = precedence
 
 
+class Local(Structure):
+    _fields_ = [
+        ("name", Token),
+        ("depth", int),
+    ]
+
+
+class Compiler(Structure):
+    _fields_ = [
+        ("locals", (Local * UINT8_COUNT)()),
+        ("localCount", int),
+        ("scopeDepth", int),
+    ]
+
+
+
 parser = Parser()
+
+current: Compiler | None = None
 
 compilingChunk: Chunk | None = None
 
@@ -137,12 +155,30 @@ def emitConstant(value: Value):
     emitBytes(opCode.OP_CONSTANT, makeConstant(value))
 
 
+def initCompiler(compiler: Compiler):
+    global current
+    compiler.localCount = 0
+    compiler.scopeDepth = 0
+    current = compiler
+
+
 def endCompiler():
     emitReturn()
 
     if DEBUG_PRINT_CODE:
         if not parser.hadError:
             disassembleChunk(currentChunk(), "code")
+
+
+def beginScope():
+    current.scopeDepth += 1
+
+
+def endScope():
+    current.scopeDepth -= 1
+    while current.localCount > 0 and current.locals[current.localCount - 1].depth > current.scopeDepth:
+        emitByte(opCode.OP_POP)
+        current.localCount -= 1
 
 
 def binary(canAssign: bool):
@@ -208,12 +244,17 @@ def string(canAssign: bool):
 
 
 def namedVariable(name: Token, canAssign: bool):
-    arg = identifierConstant(name)
+    arg = resolveLocal(current, name)
+    if arg != -1:
+        getOp, setOp = opCode.OP_GET_LOCAL, opCode.OP_SET_LOCAL
+    else:
+        arg = identifierConstant(name)
+        getOp, setOp = opCode.OP_GET_GLOBAL, opCode.OP_SET_GLOBAL
     if canAssign and match(TokenType.TOKEN_EQUAL):
         expression()
-        emitBytes(opCode.OP_SET_GLOBAL, arg)
+        emitBytes(setOp, arg)
     else:
-        emitBytes(opCode.OP_GET_GLOBAL, arg)
+        emitBytes(getOp, arg)
 
 
 def variable(canAssign: bool):
@@ -303,8 +344,50 @@ def identifierConstant(name: Token) -> int:
     )
 
 
+def identifierEqual(a: Token, b: Token) -> bool:
+    if a.length != b.length:
+        return False
+    return a.lexeme == b.lexeme
+
+
+def resolveLocal(compiler: Compiler, name: Token) -> int:
+    for i in range(compiler.localCount - 1, -1, -1):
+        local = compiler.locals[i]
+        if identifierEqual(name, local.name):
+            if local.depth == -1:
+                error("Cannot read local variable in its own initializer.")
+            return i
+    return -1
+
+
+def addLocal(name: Token):
+    if current.localCount == UINT8_COUNT:
+        error("Too many local variables in function.")
+        return
+    local = current.locals[current.localCount]
+    local.name = name
+    local.depth = -1
+    current.localCount += 1
+
+
+def declareVariable():
+    if current.scopeDepth == 0:
+        return
+    name = parser.previous
+    for i in range(current.localCount - 1, -1, -1):
+        local = current.locals[i]
+        if local.depth != -1 and local.depth < current.scopeDepth:
+            break
+        if identifierEqual(name, local.name):
+            error("Variable with this name already declared in this scope.")
+    addLocal(name)
+
+
 def parseVariable(error_message: str) -> int:
     consume(TokenType.TOKEN_IDENTIFIER, error_message)
+    declareVariable()
+    if current.scopeDepth > 0:
+        return 0
     return identifierConstant(parser.previous)
 
 
@@ -317,7 +400,20 @@ def expression():
     pass
 
 
+def block():
+    while not check(TokenType.TOKEN_RIGHT_BRACE) and not check(TokenType.TOKEN_EOF):
+        declaration()
+    consume(TokenType.TOKEN_RIGHT_BRACE, "Expect '}' after block.")
+
+
+def markInitialized():
+    current.locals[current.localCount - 1].depth = current.scopeDepth
+
+
 def defineVariable(lox_global: int):
+    if current.scopeDepth > 0:
+        markInitialized()
+        return
     emitBytes(opCode.OP_DEFINE_GLOBAL, lox_global)
 
 
@@ -373,6 +469,10 @@ def declaration():
 def statement():
     if match(TokenType.TOKEN_PRINT):
         printStatement()
+    elif match(TokenType.TOKEN_LEFT_BRACE):
+        beginScope()
+        block()
+        endScope()
     else:
         expressionStatement()
 
@@ -380,12 +480,14 @@ def statement():
 def lox_compile(source: str, chunk: Chunk) -> bool:
     global compilingChunk
 
-    compilingChunk = chunk
-
     parser.hadError = False
     parser.panicMode = False
 
     initScanner(source)
+    compiler = Compiler()
+    initCompiler(compiler)
+    compilingChunk = chunk
+
     advance()
 
     while not match(TokenType.TOKEN_EOF):

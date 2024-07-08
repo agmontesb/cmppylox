@@ -181,6 +181,9 @@ def run() -> InterpretResult:
                 push(BOOL_VAL(False))
             case opCode.OP_POP:
                 pop()
+            case opCode.OP_GET_LOCAL:
+                slot = vm.chunk.code.readByte()
+                push(vm.stack[slot])
             case opCode.OP_GET_GLOBAL:
                 name = READ_STRING()
                 value = Value()
@@ -192,6 +195,9 @@ def run() -> InterpretResult:
                 name = READ_STRING()
                 tableSet(vm.globals, name, peek(0))
                 pop()
+            case opCode.OP_SET_LOCAL:
+                slot = vm.chunk.code.readByte()
+                vm.stack[slot] = peek(0)
             case opCode.OP_SET_GLOBAL:
                 name = READ_STRING()
                 if tableSet(vm.globals, name, peek(0)):
