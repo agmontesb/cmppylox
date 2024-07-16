@@ -1,7 +1,9 @@
-from enum import Enum
+from _ctypes import Structure
+from ctypes import c_int
+from enum import IntEnum
 
 
-class TokenType(Enum):
+class TokenType(IntEnum):
     # Single-character tokens.
     TOKEN_LEFT_PAREN = 1
     TOKEN_RIGHT_PAREN = 2
@@ -52,12 +54,25 @@ class TokenType(Enum):
     TOKEN_EOF = 40
 
 
-class Token:
+class Token(Structure):
+    _fields_ = [
+        ('token_type_value', c_int),
+        ('start', c_int),
+        ('length', c_int),
+        ('line', c_int)
+    ]
+
     def __init__(self, token_type: TokenType, start: int, length: int, line: int):
-        self.token_type = token_type
-        self.start = start
-        self.length = length
-        self.line = line
+        token_type_value = token_type.value
+        super(Token, self).__init__(token_type_value, start, length, line)
+
+    @property
+    def token_type(self) -> TokenType:
+        return TokenType(self.token_type_value)
+
+    @token_type.setter
+    def token_type(self, value: TokenType):
+        self.token_type_value = value.value
 
     @property
     def lexeme(self):

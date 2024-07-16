@@ -1,15 +1,16 @@
 import sys
 from _ctypes import POINTER, pointer, Structure
-from ctypes import cast
+from ctypes import cast, c_int
 from enum import Enum
 from functools import total_ordering
 from typing import Callable
 
+import common
 from chunk import Chunk, addConstant, write_code, opCode
 from common import DEBUG_PRINT_CODE, UINT8_COUNT
 from debug import disassembleChunk
-from loxobject import copyString, LoxObj
 from scanner import initScanner, scanToken, TokenType, Token
+from loxobject import copyString, LoxObj
 from value import NUMBER_VAL, Value, OBJ_VAL
 
 
@@ -55,17 +56,16 @@ class ParseRule:
 class Local(Structure):
     _fields_ = [
         ("name", Token),
-        ("depth", int),
+        ("depth", c_int),
     ]
 
 
 class Compiler(Structure):
     _fields_ = [
-        ("locals", (Local * UINT8_COUNT)()),
-        ("localCount", int),
-        ("scopeDepth", int),
+        ("locals", (Local * UINT8_COUNT)),
+        ("localCount", c_int),
+        ("scopeDepth", c_int),
     ]
-
 
 
 parser = Parser()
@@ -84,9 +84,9 @@ def errorAt(token, message: str):
         return
     parser.panicMode = True
     if token.token_type == TokenType.TOKEN_EOF:
-        print(f"[line {token.line}] Error at end: {message}")
+        print(f"[line {token.line}] Error at end: {message}", file=common.out_file)
     else:
-        print(f"[line {token.line}] Error at '{token.lexeme}': {message}")
+        print(f"[line {token.line}] Error at '{token.lexeme}': {message}", file=common.out_file)
     parser.hadError = True
 
 

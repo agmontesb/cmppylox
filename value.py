@@ -1,8 +1,9 @@
+import sys
 from _ctypes import Structure, Union, sizeof, pointer, POINTER
 from ctypes import c_double, c_bool, c_int
 
 from loxobject import LoxObj, printObject
-
+import common
 
 class ValueType(c_int):
     VAL_BOOL = 0x0001
@@ -108,16 +109,16 @@ def OBJ_VAL(obj: LoxObj) -> Value:
     return val
 
 
-def printValue(value: Value, end='\n'):
+def printValue(value: Value, end='\n', file=common.out_file):
     match value._type:
         case ValueType.VAL_BOOL:
-            print('true' if AS_BOOL(value) else 'false', end=end)
+            print('true' if AS_BOOL(value) else 'false', end=end, file=file)
         case ValueType.VAL_NIL:
-            print('nil', end=end)
+            print('nil', end=end, file=file)
         case ValueType.VAL_NUMBER:
-            print(f"'{AS_NUMBER(value)}'", end=end)
+            print(f"'{AS_NUMBER(value)}'", end=end, file=file)
         case ValueType.VAL_OBJ:
-            printObject(value, end=end)
+            printObject(value, end=end, file=file)
 
 
 def valuesEqual(a: Value, b: Value) -> bool:

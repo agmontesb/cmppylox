@@ -1,11 +1,10 @@
-import sys
-
 from chunk import Chunk, opCode
 from value import printValue
+import common
 
 
 def disassembleChunk(chunk: Chunk, name: str):
-    print(f"== {name} ==")
+    print(f"== {name} ==", file=common.out_file)
     offset = 0
     while offset < chunk.code.dataSize():
         offset = disassembleInstruction(chunk, offset)
@@ -13,13 +12,13 @@ def disassembleChunk(chunk: Chunk, name: str):
 
 
 def disassembleInstruction(chunk: Chunk, offset: int):
-    print(f"{offset:04d} ", end="")
+    print(f"{offset:04d} ", file=common.out_file, end="")
 
     chunk.code.setDataPosition(offset)
     if offset > 0 and chunk.lines[offset] == chunk.lines[offset - 1]:
-        print("   | ", end="")
+        print("   | ", end="", file=common.out_file)
     else:
-        print(f"{chunk.lines[offset]:04d} ", end="")
+        print(f"{chunk.lines[offset]:04d} ", end="", file=common.out_file)
 
     instrution = chunk.code.readByte()
     try:
@@ -71,24 +70,25 @@ def disassembleInstruction(chunk: Chunk, offset: int):
         case opCode.OP_RETURN:
             return simpleInstruction("OP_RETURN", offset)
         case _:
-            print("Unknown opcode")
+            print("Unknown opcode", file=common.out_file)
             return offset + 1
 
 
 def constantInstruction(name: str, chunk: Chunk, offset: int):
     constant_pos = chunk.code.readByte()
-    print(f"{name} {constant_pos} ", end="")
+    print(f"{name} {constant_pos} ", end="", file=common.out_file)
     value = chunk.constants[constant_pos]
-    printValue(value)
+    printValue(value, file=common.out_file)
     return offset + 2
 
+
 def simpleInstruction(name: str, offset: int):
-    print(name)
+    print(name, file=common.out_file)
     return offset + 1
     pass
 
 
 def byteInstruction(name: str, chunk: Chunk, offset: int):
     slot = chunk.code[offset + 1]
-    print(f"{name} {slot}")
+    print(f"{name} {slot}", file=common.out_file)
     return offset + 2

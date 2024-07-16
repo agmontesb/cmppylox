@@ -1,3 +1,8 @@
+import sys
+
+out_file = sys.stdout
+
+
 DEBUG_PRINT_CODE = True
 DEBUG_TRACE_EXECUTION = True
 

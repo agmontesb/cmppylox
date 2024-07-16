@@ -1300,3 +1300,6 @@ class Parcel(Object):
     #     :raises: Throwable
     #     """
     #     pass
+
+    def __getitem__(self, item):
+        return self._buffer[item]

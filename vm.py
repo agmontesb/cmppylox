@@ -1,10 +1,10 @@
 import collections
-import sys
 from _ctypes import sizeof, pointer, POINTER
 from ctypes import c_int, cast
 from enum import Enum
 import operator
 
+import common
 from chunk import Chunk, init_chunk, free_chunk, opCode
 from common import DEBUG_TRACE_EXECUTION
 from compiler import lox_compile
@@ -83,8 +83,8 @@ def resetStack():
 
 
 def runtimeError(format_str: str, *args):
-    print(format_str.format(*args), end='')
-    print(f" [line {vm.chunk.lines[vm.ip]}] in script")
+    print(format_str.format(*args), end='', file=common.out_file)
+    print(f" [line {vm.chunk.lines[vm.ip]}] in script", file=common.out_file)
     resetStack()
     return InterpretResult.INTERPRET_RUNTIME_ERROR
 
@@ -138,11 +138,7 @@ def run() -> InterpretResult:
     def read_byte():
         vm.chunk.code.setDataPosition(vm.ip)
         vm.ip += 1
-        instruction = vm.chunk.code.readByte()
-        try:
-            return opCode(instruction)
-        except:
-            return None
+        return vm.chunk.code.readByte()
 
     def read_constant():
         constant_pos = vm.chunk.code.readByte()
@@ -160,15 +156,19 @@ def run() -> InterpretResult:
 
     while True:
         if DEBUG_TRACE_EXECUTION:
-            print("          ")
+            print("          ", file=common.out_file)
             if not vm.stack:
-                print("[]")
+                print("[]", file=common.out_file)
             for x in vm.stack:
-                print("[ ", end="")
-                printValue(x, end="")
-                print(" ]")
+                print("[ ", end="", file=common.out_file)
+                printValue(x, end="", file=common.out_file)
+                print(" ]", file=common.out_file)
             disassembleInstruction(vm.chunk, vm.ip)
-        instruction = read_byte()
+        try:
+            instruction = opCode(read_byte())
+        except:
+            print("Unknown opcode", file=common.out_file)
+            return InterpretResult.INTERPRET_RUNTIME_ERROR
         match instruction:
             case opCode.OP_CONSTANT:
                 constant = read_constant()
@@ -182,7 +182,7 @@ def run() -> InterpretResult:
             case opCode.OP_POP:
                 pop()
             case opCode.OP_GET_LOCAL:
-                slot = vm.chunk.code.readByte()
+                slot = read_byte()
                 push(vm.stack[slot])
             case opCode.OP_GET_GLOBAL:
                 name = READ_STRING()
@@ -196,7 +196,7 @@ def run() -> InterpretResult:
                 tableSet(vm.globals, name, peek(0))
                 pop()
             case opCode.OP_SET_LOCAL:
-                slot = vm.chunk.code.readByte()
+                slot = read_byte()
                 vm.stack[slot] = peek(0)
             case opCode.OP_SET_GLOBAL:
                 name = READ_STRING()
@@ -236,11 +236,10 @@ def run() -> InterpretResult:
                     return InterpretResult.INTERPRET_RUNTIME_ERROR
                 push(NUMBER_VAL(-AS_NUMBER(pop())))
             case opCode.OP_PRINT:
-                printValue(pop())
+                printValue(pop(), file=common.out_file)
             case opCode.OP_RETURN:
                 return InterpretResult.INTERPRET_OK
             case _:
-                print("Unknown opcode")
-                return InterpretResult.INTERPRET_RUNTIME_ERROR
+                pass
         pass
     pass

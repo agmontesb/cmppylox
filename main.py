@@ -1,9 +1,6 @@
 import sys
 
-from chunk import Chunk, init_chunk, write_code, free_chunk, addConstant
-from debug import disassembleChunk
 from vm import initVm, freeVM, interpret
-
 
 opCode = sys.modules['chunk']
 

@@ -1,6 +1,8 @@
 from _ctypes import Structure, sizeof, POINTER, pointer
 from ctypes import c_int, c_char_p, cast, c_uint32
 
+import common
+
 
 class ObjType(c_int):
     OBJ_STRING = 0x0001
@@ -93,12 +95,12 @@ def copyString(chars: str) -> ObjString:
     return allocateString(chars, length, hash)
 
 
-def printObject(value: 'Value', end='\n'):
+def printObject(value: 'Value', end='\n', file=common.out_file):
     match OBJ_TYPE(value):
         case ObjType.OBJ_STRING:
-            print(f"{AS_CSTRING(value)}", end=end)
+            print(f"{AS_CSTRING(value)}", end=end, file=file)
         case _:
-            print("Unknown object type", end=end)
+            print("Unknown object type", end=end, file=file)
 
 
 def isObjType(value: 'Value', vtype: ObjType) -> bool:
