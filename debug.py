@@ -67,6 +67,12 @@ def disassembleInstruction(chunk: Chunk, offset: int):
             return simpleInstruction("OP_LESS", offset)
         case opCode.OP_PRINT:
             return simpleInstruction("OP_PRINT", offset)
+        case opCode.OP_JUMP:
+            return jumpInstruction("OP_JUMP", 1, chunk, offset)
+        case opCode.OP_JUMP_IF_FALSE:
+            return jumpInstruction("OP_JUMP_IF_FALSE", 1, chunk, offset)
+        case opCode.OP_LOOP:
+            return jumpInstruction("OP_LOOP", -1, chunk, offset)
         case opCode.OP_RETURN:
             return simpleInstruction("OP_RETURN", offset)
         case _:
@@ -92,3 +98,11 @@ def byteInstruction(name: str, chunk: Chunk, offset: int):
     slot = chunk.code[offset + 1]
     print(f"{name} {slot}", file=common.out_file)
     return offset + 2
+
+
+def jumpInstruction(name: str, sign: int, chunk: Chunk, offset: int):
+    chunk.code.setDataPosition(offset + 1)
+    jump = chunk.code.readByte() << 8 | chunk.code.readByte()
+    print(f"{name} {offset} -> {offset + 3 + sign * jump}", file=common.out_file)
+    chunk.code.setDataPosition(offset)
+    return offset + 3

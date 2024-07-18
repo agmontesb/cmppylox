@@ -145,6 +145,10 @@ def run() -> InterpretResult:
         vm.ip = vm.chunk.code.dataPosition()
         return vm.chunk.constants[constant_pos]
 
+    def read_short():
+        vm.chunk.code.setDataPosition(vm.ip)
+        return read_byte() << 8 | read_byte()
+
     def binary_op(value_type, op):
         if not IS_NUMBER(peek(0)) or not IS_NUMBER(peek(1)):
             runtimeError("Operands must be numbers.")
@@ -237,6 +241,16 @@ def run() -> InterpretResult:
                 push(NUMBER_VAL(-AS_NUMBER(pop())))
             case opCode.OP_PRINT:
                 printValue(pop(), file=common.out_file)
+            case opCode.OP_JUMP:
+                offset = read_short()
+                vm.ip += offset
+            case opCode.OP_JUMP_IF_FALSE:
+                offset = read_short()
+                if isFalsey(peek(0)):
+                    vm.ip += offset
+            case opCode.OP_LOOP:
+                offset = read_short()
+                vm.ip -= offset
             case opCode.OP_RETURN:
                 return InterpretResult.INTERPRET_OK
             case _:

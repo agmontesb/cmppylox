@@ -56,7 +56,9 @@ class Parcel(Object):
         pos = self.dataPosition()
         s.pack_into(self._buffer, pos, cTypeValue.value)
         self.setDataPosition(pos + bytesToWrite)
-        self.setDataSize(dataSize + bytesToWrite)
+        if pos + bytesToWrite > dataSize:
+            delta = pos + bytesToWrite - dataSize
+            self.setDataSize(dataSize + delta)
 
     def _writePrimitiveArray(self, cType, val):
         # s = self.primitives[dataType]

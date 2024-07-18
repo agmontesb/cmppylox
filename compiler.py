@@ -139,6 +139,22 @@ def emitBytes(byte1: int | opCode, byte2: int | opCode):
     emitByte(byte2)
 
 
+def emitLoop(loopStart: int):
+    emitByte(opCode.OP_LOOP)
+    offset = currentChunk().code.dataSize() - loopStart + 2
+    if offset > common.UINT16_MAX:
+        error("Loop body too large.")
+    emitByte((offset >> 8) & 0xff)
+    emitByte(offset & 0xff)
+
+
+def emitJump(instruction: opCode) -> int:
+    emitByte(instruction)
+    emitByte(0xff)
+    emitByte(0xff)
+    return currentChunk().code.dataSize() - 2
+
+
 def emitReturn():
     emitByte(opCode.OP_RETURN)
 
@@ -153,6 +169,17 @@ def makeConstant(value: Value):
 
 def emitConstant(value: Value):
     emitBytes(opCode.OP_CONSTANT, makeConstant(value))
+
+
+def patchJump(offset: int):
+    actual_pos = currentChunk().code.dataPosition()
+    jump = actual_pos - offset - 2
+    if jump > common.UINT16_MAX:
+        error("Too much code to jump over.")
+    currentChunk().code.setDataPosition(offset)
+    currentChunk().code.writeByte((jump >> 8) & 0xff)
+    currentChunk().code.writeByte(jump & 0xff)
+    currentChunk().code.setDataPosition(actual_pos)
 
 
 def initCompiler(compiler: Compiler):
@@ -273,6 +300,21 @@ def unary(canAssign: bool):
         case _:
             return
 
+def and_(canAssign: bool):
+    endJump = emitJump(opCode.OP_JUMP_IF_FALSE)
+    emitByte(opCode.OP_POP)
+    parsePrecedence(Precedence.PREC_AND)
+    patchJump(endJump)
+
+
+def or_(canAssign: bool):
+    elseJump = emitJump(opCode.OP_JUMP_IF_FALSE)
+    endJump = emitJump(opCode.OP_JUMP)
+    patchJump(elseJump)
+    emitByte(opCode.OP_POP)
+    parsePrecedence(Precedence.PREC_OR)
+    patchJump(endJump)
+
 
 rules: dict[TokenType, ParseRule] = {
     TokenType.TOKEN_LEFT_PAREN: ParseRule(grouping, None, Precedence.PREC_NONE),
@@ -297,7 +339,7 @@ rules: dict[TokenType, ParseRule] = {
     TokenType.TOKEN_GREATER_EQUAL: ParseRule(None, binary, Precedence.PREC_COMPARISON),
     TokenType.TOKEN_LESS: ParseRule(None, binary, Precedence.PREC_COMPARISON),
     TokenType.TOKEN_LESS_EQUAL: ParseRule(None, binary, Precedence.PREC_COMPARISON),
-    TokenType.TOKEN_AND: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_AND: ParseRule(None, and_, Precedence.PREC_AND),
     TokenType.TOKEN_CLASS: ParseRule(None, None, Precedence.PREC_NONE),
     TokenType.TOKEN_ELSE: ParseRule(None, None, Precedence.PREC_NONE),
     TokenType.TOKEN_FALSE: ParseRule(literal, None, Precedence.PREC_NONE),
@@ -305,7 +347,7 @@ rules: dict[TokenType, ParseRule] = {
     TokenType.TOKEN_FUN: ParseRule(None, None, Precedence.PREC_NONE),
     TokenType.TOKEN_IF: ParseRule(None, None, Precedence.PREC_NONE),
     TokenType.TOKEN_NIL: ParseRule(literal, None, Precedence.PREC_NONE),
-    TokenType.TOKEN_OR: ParseRule(None, None, Precedence.PREC_NONE),
+    TokenType.TOKEN_OR: ParseRule(None, or_, Precedence.PREC_OR),
     TokenType.TOKEN_PRINT: ParseRule(None, None, Precedence.PREC_NONE),
     TokenType.TOKEN_RETURN: ParseRule(None, None, Precedence.PREC_NONE),
     TokenType.TOKEN_SUPER: ParseRule(None, None, Precedence.PREC_NONE),
@@ -433,10 +475,76 @@ def expressionStatement():
     emitByte(opCode.OP_POP)
 
 
+def forStatement():
+    beginScope()
+    consume(TokenType.TOKEN_LEFT_PAREN, "Expect '(' after 'for'.")
+    if match(TokenType.TOKEN_SEMICOLON):
+        pass
+    elif match(TokenType.TOKEN_VAR):
+        varDeclaration()
+    else:
+        expressionStatement()
+    # consume(TokenType.TOKEN_SEMICOLON, "Expect ';'.")
+
+    loopStart = currentChunk().code.dataSize()
+    exitJump = -1
+    if not match(TokenType.TOKEN_SEMICOLON):
+        expression()
+        consume(TokenType.TOKEN_SEMICOLON, "Expect ';' after loop condition.")
+        exitJump = emitJump(opCode.OP_JUMP_IF_FALSE)
+        emitByte(opCode.OP_POP)
+
+    # consume(TokenType.TOKEN_SEMICOLON, "Expect ';'.")
+    if not match(TokenType.TOKEN_RIGHT_PAREN):
+        bodyJump = emitJump(opCode.OP_JUMP)
+        incrementStart = currentChunk().code.dataSize()
+        expression()
+        emitByte(opCode.OP_POP)
+        consume(TokenType.TOKEN_RIGHT_PAREN, "Expect ')' after for clauses.")
+        emitLoop(loopStart)
+        loopStart = incrementStart
+        patchJump(bodyJump)
+
+    statement()
+
+    emitLoop(loopStart)
+    if exitJump != -1:
+        patchJump(exitJump)
+        emitByte(opCode.OP_POP)
+
+    endScope()
+
 def printStatement():
     expression()
     consume(TokenType.TOKEN_SEMICOLON, "Expect ';' after value.")
     emitByte(opCode.OP_PRINT)
+
+
+def whileStatement():
+    loopStart = currentChunk().code.dataSize()
+    consume(TokenType.TOKEN_LEFT_PAREN, "Expect '(' after 'while'.")
+    expression()
+    consume(TokenType.TOKEN_RIGHT_PAREN, "Expect ')' after condition.")
+    exitJump = emitJump(opCode.OP_JUMP_IF_FALSE)
+    emitByte(opCode.OP_POP)
+    statement()
+    emitLoop(loopStart)
+    patchJump(exitJump)
+    emitByte(opCode.OP_POP)
+
+def ifStatement():
+    consume(TokenType.TOKEN_LEFT_PAREN, "Expect '(' after 'if'.")
+    expression()
+    consume(TokenType.TOKEN_RIGHT_PAREN, "Expect ')' after condition.")
+    thenJump = emitJump(opCode.OP_JUMP_IF_FALSE)
+    emitByte(opCode.OP_POP)
+    statement()
+    elseJump = emitJump(opCode.OP_JUMP)
+    patchJump(thenJump)
+    emitByte(opCode.OP_POP)
+    if match(TokenType.TOKEN_ELSE):
+        statement()
+    patchJump(elseJump)
 
 
 def synchronize():
@@ -469,6 +577,12 @@ def declaration():
 def statement():
     if match(TokenType.TOKEN_PRINT):
         printStatement()
+    elif match(TokenType.TOKEN_IF):
+        ifStatement()
+    elif match(TokenType.TOKEN_WHILE):
+        whileStatement()
+    elif match(TokenType.TOKEN_FOR):
+        forStatement()
     elif match(TokenType.TOKEN_LEFT_BRACE):
         beginScope()
         block()

@@ -6,10 +6,10 @@ from loxobject import LoxObj, printObject
 import common
 
 class ValueType(c_int):
-    VAL_BOOL = 0x0001
     VAL_NIL = 0x0001
-    VAL_NUMBER = 0x0002
-    VAL_OBJ = 0x0003
+    VAL_BOOL = 0x0002
+    VAL_NUMBER = 0x0003
+    VAL_OBJ = 0x0004
 
 
 class Value(Structure):
